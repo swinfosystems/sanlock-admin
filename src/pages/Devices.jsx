@@ -189,15 +189,31 @@ function DeviceCommands({ orgId, deviceId }) {
   }
 
   useEffect(() => {
-    let timer
+    let mounted = true
     const init = async () => {
       await fetchCmds()
-      // simple polling every 5s while panel is open
-      timer = setInterval(fetchCmds, 5000)
+      const channel = supabase
+        .channel(`commands-${orgId}-${deviceId}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'commands', filter: `org_id=eq.${orgId} and device_id=eq.${deviceId}` }, (payload) => {
+          if (!mounted) return
+          const row = payload.new
+          setCmds((prev) => [{ id: row.id, type: row.type, status: row.status, created_at: row.created_at, updated_at: row.updated_at }, ...prev]
+            .sort((a,b) => new Date(b.created_at) - new Date(a.created_at))
+            .slice(0, 20))
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'commands', filter: `org_id=eq.${orgId} and device_id=eq.${deviceId}` }, (payload) => {
+          if (!mounted) return
+          const row = payload.new
+          setCmds((prev) => prev.map((c) => c.id === row.id ? { ...c, status: row.status, updated_at: row.updated_at } : c))
+        })
+        .subscribe()
+      return () => {
+        supabase.removeChannel(channel)
+      }
     }
     init()
     return () => {
-      if (timer) clearInterval(timer)
+      mounted = false
     }
   }, [orgId, deviceId])
 
