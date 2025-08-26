@@ -1,68 +1,89 @@
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --bg: #0b1020;
+  --panel: #0f172a;
+  --card: #111a2e;
+  --border: #1f2a44;
+  --text: #e6edf3;
+  --muted: #9fb1c8;
+  --primary: #3b82f6;
+  --primary-600: #2563eb;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  background: var(--bg);
+  color: var(--text);
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+/* Links */
+a { color: var(--muted); text-decoration: none; }
+a:hover { color: var(--text); }
+
+/* Top bar */
+.topbar {
+  display: flex; gap: 16px; align-items: center;
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  position: sticky; top: 0; z-index: 10;
+}
+.topbar .brand { font-weight: 700; color: var(--text); }
+.topbar .spacer { margin-left: auto; }
+
+/* Layout */
+.page { padding: 16px; }
+.toolbar { display: flex; gap: 8px; align-items: center; }
+.toolbar h3 { margin: 0; }
+.muted { color: var(--muted); }
+
+/* Buttons */
+button, .btn {
+  border-radius: 8px; border: 1px solid var(--border);
+  background: #0c1427; color: var(--text);
+  padding: 8px 12px; cursor: pointer; font-weight: 600;
+}
+.btn:hover { border-color: var(--primary); }
+.btn-primary { background: var(--primary); border-color: var(--primary-600); }
+.btn-primary:hover { background: var(--primary-600); }
+.btn-ghost { background: transparent; }
+.btn-danger { background: var(--danger); border-color: #b91c1c; }
+
+/* Inputs */
+input, select, textarea {
+  background: #0c1427; color: var(--text);
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 10px;
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+/* Cards */
+.card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
+/* Table */
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td { border-bottom: 1px solid var(--border); padding: 10px 8px; text-align: left; }
+.table th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.table tr:hover td { background: #0e1a31; }
+
+/* Badges */
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border); }
+.badge-success { background: rgba(16,185,129,0.1); color: #34d399; border-color: rgba(16,185,129,0.35); }
+.badge-warning { background: rgba(245,158,11,0.1); color: #fbbf24; border-color: rgba(245,158,11,0.35); }
+.badge-danger { background: rgba(239,68,68,0.1); color: #f87171; border-color: rgba(239,68,68,0.35); }
+.badge-neutral { background: rgba(148,163,184,0.12); color: #cbd5e1; border-color: rgba(148,163,184,0.35); }
+
+/* Utilities */
+.row { display: flex; gap: 8px; align-items: center; }
+.gap-8 { gap: 8px; }
+.mt-8 { margin-top: 8px; }
+.mt-12 { margin-top: 12px; }
+.mt-16 { margin-top: 16px; }
+.right { margin-left: auto; }
+.code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; }

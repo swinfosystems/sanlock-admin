@@ -42,22 +42,21 @@ export default function App() {
   }
 
   const Nav = () => (
-    <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #eee' }}>
-      <strong>Sanlock Admin</strong>
+    <div className="topbar">
+      <span className="brand">Sanlock Admin</span>
       <Link to="/">Dashboard</Link>
       <Link to="/devices">Devices</Link>
       <Link to="/alerts">Alerts</Link>
-      <div style={{ marginLeft: 'auto' }}>
-        <span style={{ marginRight: 12 }}>{email}</span>
-        <button onClick={signOut}>Sign out</button>
-      </div>
+      <div className="spacer" />
+      <span className="muted" style={{ marginRight: 12 }}>{email}</span>
+      <button className="btn" onClick={signOut}>Sign out</button>
     </div>
   )
 
   return (
     <BrowserRouter>
       <Nav />
-      <div style={{ padding: 16 }}>
+      <div className="page">
         <Routes>
           <Route path="/" element={<Dashboard />} />
           <Route path="/devices" element={<Devices />} />

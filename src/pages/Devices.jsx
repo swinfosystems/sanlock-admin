@@ -88,83 +88,107 @@ export default function Devices() {
     }
   }
 
+  const statusBadge = (s) => {
+    const cls = s === 'online' ? 'badge badge-success' : s === 'warning' ? 'badge badge-warning' : s === 'offline' ? 'badge badge-danger' : 'badge badge-neutral'
+    return <span className={cls}>{s || 'unknown'}</span>
+  }
+
   if (loadingOrg) return <div>Loading org…</div>
   if (orgError) return <div style={{ color: 'crimson' }}>{orgError}</div>
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <h3 style={{ margin: 0 }}>Devices</h3>
-        <button onClick={fetchDevices} disabled={loading}>Refresh</button>
+      <div className="toolbar">
+        <h3>Devices</h3>
+        <button className="btn" onClick={fetchDevices} disabled={loading}>Refresh</button>
       </div>
 
-      <form onSubmit={createDevice} style={{ display: 'flex', gap: 8, margin: '12px 0' }}>
+      <form onSubmit={createDevice} className="row mt-12">
         <input
           placeholder="New device name"
           value={newName}
           onChange={(e) => setNewName(e.target.value)}
           style={{ padding: 8 }}
         />
-        <button type="submit" disabled={creating || !newName.trim()}>Add</button>
+        <button className="btn btn-primary" type="submit" disabled={creating || !newName.trim()}>Add</button>
       </form>
 
       {error && <div style={{ color: 'crimson', marginBottom: 8 }}>{error}</div>}
       {loading ? (
         <div>Loading devices…</div>
+      ) : devices.length === 0 ? (
+        <div className="mt-12 muted">No devices yet.</div>
       ) : (
-        <div>
-          {devices.length === 0 ? (
-            <div>No devices yet.</div>
-          ) : (
-            <ul>
+        <div className="card mt-12">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>ID</th>
+                <th>Status</th>
+                <th>Version</th>
+                <th>Last seen</th>
+                <th style={{ width: 260 }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
               {devices.map((d) => (
-                <DeviceRow key={d.id} d={d} orgId={orgId} onCopy={copy} onEnqueue={enqueueCommand} />
+                <DeviceRow key={d.id} d={d} orgId={orgId} onCopy={copy} onEnqueue={enqueueCommand} renderStatus={statusBadge} />
               ))}
-            </ul>
-          )}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
   )
 }
 
-function DeviceRow({ d, orgId, onCopy, onEnqueue }) {
+function DeviceRow({ d, orgId, onCopy, onEnqueue, renderStatus }) {
   const [type, setType] = useState('message_show')
   const [params, setParams] = useState('{"text":"Hello"}')
   const [showHistory, setShowHistory] = useState(false)
 
   return (
-    <li style={{ padding: '12px 0', borderBottom: '1px solid #eee' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <strong>{d.name || '(unnamed)'}</strong>
-        <span style={{ fontSize: 12, color: '#666' }}>ID: {d.id}</span>
-        <button onClick={() => onCopy(d.id)}>Copy ID</button>
-        <button onClick={() => setShowHistory((v) => !v)}>{showHistory ? 'Hide' : 'Commands history'}</button>
-      </div>
-      <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>
-        Status: {d.status || 'unknown'} • Version: {d.version || '-'} • Last seen: {d.last_seen_at || '-'}
-      </div>
-      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-        <select value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="message_show">message_show</option>
-          <option value="lock_now">lock_now</option>
-          <option value="reboot">reboot</option>
-        </select>
-        <input
-          style={{ flex: 1, padding: 6 }}
-          value={params}
-          onChange={(e) => setParams(e.target.value)}
-          placeholder='{"key":"value"}'
-        />
-        <button onClick={() => onEnqueue(d.id, type, params)}>Send</button>
-      </div>
-
+    <>
+      <tr>
+        <td><strong>{d.name || '(unnamed)'}</strong></td>
+        <td>
+          <span className="code">{d.id}</span>
+          <button className="btn btn-ghost" style={{ marginLeft: 8 }} onClick={() => onCopy(d.id)}>Copy</button>
+        </td>
+        <td>{renderStatus(d.status)}</td>
+        <td>{d.version || '-'}</td>
+        <td style={{ fontSize: 12 }}>
+          {d.last_seen_at ? new Date(d.last_seen_at).toLocaleString() : '-'}
+        </td>
+        <td>
+          <div className="row gap-8">
+            <select value={type} onChange={(e) => setType(e.target.value)}>
+              <option value="message_show">message_show</option>
+              <option value="lock_now">lock_now</option>
+              <option value="reboot">reboot</option>
+            </select>
+            <input
+              style={{ flex: 1, minWidth: 160 }}
+              value={params}
+              onChange={(e) => setParams(e.target.value)}
+              placeholder='{"key":"value"}'
+            />
+            <button className="btn btn-primary" onClick={() => onEnqueue(d.id, type, params)}>Send</button>
+            <button className="btn" onClick={() => setShowHistory((v) => !v)}>{showHistory ? 'Hide' : 'History'}</button>
+          </div>
+        </td>
+      </tr>
       {showHistory && (
-        <div style={{ background: '#fafafa', padding: 8, marginTop: 8 }}>
-          <DeviceCommands orgId={orgId} deviceId={d.id} />
-        </div>
+        <tr>
+          <td colSpan={6}>
+            <div className="card">
+              <DeviceCommands orgId={orgId} deviceId={d.id} />
+            </div>
+          </td>
+        </tr>
       )}
-    </li>
+    </>
   )
 }
 
@@ -219,27 +243,34 @@ function DeviceCommands({ orgId, deviceId }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+      <div className="toolbar">
         <strong>Recent commands</strong>
-        <button onClick={fetchCmds} disabled={loading}>Refresh</button>
+        <button className="btn" onClick={fetchCmds} disabled={loading}>Refresh</button>
       </div>
       {error && <div style={{ color: 'crimson', marginTop: 6 }}>{error}</div>}
       {loading ? (
         <div>Loading…</div>
       ) : cmds.length === 0 ? (
-        <div>No commands yet.</div>
+        <div className="muted">No commands yet.</div>
       ) : (
-        <ul>
-          {cmds.map((c) => (
-            <li key={c.id} style={{ padding: '6px 0', borderBottom: '1px solid #eee' }}>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <span style={{ minWidth: 120 }}><strong>{c.type}</strong></span>
-                <span>Status: {c.status}</span>
-                <span style={{ marginLeft: 'auto', fontSize: 12, color: '#666' }}>{new Date(c.updated_at || c.created_at).toLocaleString()}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <table className="table mt-8">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Status</th>
+              <th>Updated</th>
+            </tr>
+          </thead>
+          <tbody>
+            {cmds.map((c) => (
+              <tr key={c.id}>
+                <td><strong>{c.type}</strong></td>
+                <td>{c.status}</td>
+                <td style={{ fontSize: 12 }}>{new Date(c.updated_at || c.created_at).toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   )

@@ -50,33 +50,33 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <h3 style={{ margin: 0 }}>Dashboard</h3>
-        <button onClick={refresh} disabled={loading}>Refresh</button>
+      <div className="toolbar">
+        <h3>Dashboard</h3>
+        <button className="btn" onClick={refresh} disabled={loading}>Refresh</button>
       </div>
       {error && <div style={{ color: 'crimson', marginTop: 8 }}>{error}</div>}
 
-      <div style={{ display: 'flex', gap: 16, marginTop: 12 }}>
-        <Stat label="Devices" value={counts.devices} />
-        <Stat label="Alerts (24h)" value={counts.alerts24h} />
-        <Stat label="Queued commands" value={counts.pendingCmds} />
+      <div className="row gap-8 mt-12" style={{ flexWrap: 'wrap' }}>
+        <StatCard label="Devices" value={counts.devices} />
+        <StatCard label="Alerts (24h)" value={counts.alerts24h} />
+        <StatCard label="Queued commands" value={counts.pendingCmds} />
       </div>
 
-      <div style={{ marginTop: 20 }}>
+      <div className="card mt-16">
         <strong>Recent alerts</strong>
         {loading ? (
-          <div>Loading…</div>
+          <div className="mt-8">Loading…</div>
         ) : alerts.length === 0 ? (
-          <div style={{ marginTop: 8 }}>No alerts yet.</div>
+          <div className="muted mt-8">No alerts yet.</div>
         ) : (
-          <ul style={{ marginTop: 8 }}>
+          <ul style={{ marginTop: 8, paddingLeft: 0, listStyle: 'none' }}>
             {alerts.map((a) => (
-              <li key={a.id} style={{ padding: '8px 0', borderBottom: '1px solid #eee' }}>
+              <li key={a.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                 <div>
                   <strong>{a.type}</strong>
-                  <span style={{ marginLeft: 8, fontSize: 12, color: '#666' }}>{timeAgo(a.created_at)}</span>
+                  <span style={{ marginLeft: 8, fontSize: 12 }} className="muted">{timeAgo(a.created_at)}</span>
                 </div>
-                <div style={{ fontSize: 12, color: '#555' }}>Device: {a.device_id}</div>
+                <div className="code muted">Device: {a.device_id}</div>
               </li>
             ))}
           </ul>
@@ -86,11 +86,11 @@ export default function Dashboard() {
   )
 }
 
-function Stat({ label, value }) {
+function StatCard({ label, value }) {
   return (
-    <div style={{ border: '1px solid #eee', borderRadius: 8, padding: '12px 16px', minWidth: 160 }}>
-      <div style={{ fontSize: 12, color: '#666' }}>{label}</div>
-      <div style={{ fontSize: 22, fontWeight: 600 }}>{value}</div>
+    <div className="card" style={{ minWidth: 220 }}>
+      <div className="muted" style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.4 }}>{label}</div>
+      <div style={{ fontSize: 28, fontWeight: 700, marginTop: 6 }}>{value}</div>
     </div>
   )
 }
