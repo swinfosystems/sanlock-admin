@@ -9,25 +9,29 @@ export default function Devices() {
   const [error, setError] = useState('')
   const [newName, setNewName] = useState('')
   const [creating, setCreating] = useState(false)
+  const [busy, setBusy] = useState(false)
 
-  const load = async () => {}
+  const fetchDevices = async () => {
+    if (!orgId) return
+    setLoading(true)
+    setError('')
+    const { data, error } = await supabase
+      .from('devices')
+      .select('id, name, status, version, last_seen_at')
+      .eq('org_id', orgId)
+      .order('name', { ascending: true })
+    if (error) setError(error.message)
+    else setDevices(data || [])
+    setLoading(false)
+  }
+
   useEffect(() => {
     if (!orgId) return
     let mounted = true
-    const fetchDevices = async () => {
-      setLoading(true)
-      setError('')
-      const { data, error } = await supabase
-        .from('devices')
-        .select('id, name, status, version, last_seen_at')
-        .eq('org_id', orgId)
-        .order('name', { ascending: true })
-      if (!mounted) return
-      if (error) setError(error.message)
-      else setDevices(data || [])
-      setLoading(false)
+    const init = async () => {
+      await fetchDevices()
     }
-    fetchDevices()
+    init()
     return () => { mounted = false }
   }, [orgId])
 
@@ -52,13 +56,50 @@ export default function Devices() {
     }
   }
 
+  const copy = async (text) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      alert('Copied!')
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const enqueueCommand = async (deviceId, type, paramsText) => {
+    if (!orgId) return
+    setBusy(true)
+    setError('')
+    try {
+      let params
+      try {
+        params = paramsText ? JSON.parse(paramsText) : {}
+      } catch (e) {
+        throw new Error('Params must be valid JSON')
+      }
+      const { error } = await supabase
+        .from('commands')
+        .insert([{ org_id: orgId, device_id: deviceId, type, params_json: params }])
+      if (error) throw error
+      // no-op; a future Commands panel could refresh history
+      alert('Command enqueued')
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   if (loadingOrg) return <div>Loading org…</div>
   if (orgError) return <div style={{ color: 'crimson' }}>{orgError}</div>
 
   return (
     <div>
-      <h3>Devices</h3>
-      <form onSubmit={createDevice} style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <h3 style={{ margin: 0 }}>Devices</h3>
+        <button onClick={fetchDevices} disabled={loading}>Refresh</button>
+      </div>
+
+      <form onSubmit={createDevice} style={{ display: 'flex', gap: 8, margin: '12px 0' }}>
         <input
           placeholder="New device name"
           value={newName}
@@ -78,17 +119,43 @@ export default function Devices() {
           ) : (
             <ul>
               {devices.map((d) => (
-                <li key={d.id} style={{ padding: '8px 0', borderBottom: '1px solid #eee' }}>
-                  <strong>{d.name || '(unnamed)'}</strong>
-                  <div style={{ fontSize: 12, color: '#555' }}>
-                    Status: {d.status || 'unknown'} • Version: {d.version || '-'} • Last seen: {d.last_seen_at || '-'}
-                  </div>
-                </li>
+                <DeviceRow key={d.id} d={d} onCopy={copy} onEnqueue={enqueueCommand} />
               ))}
             </ul>
           )}
         </div>
       )}
     </div>
+  )
+}
+
+function DeviceRow({ d, onCopy, onEnqueue }) {
+  const [type, setType] = useState('message_show')
+  const [params, setParams] = useState('{"text":"Hello"}')
+  return (
+    <li style={{ padding: '12px 0', borderBottom: '1px solid #eee' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <strong>{d.name || '(unnamed)'}</strong>
+        <span style={{ fontSize: 12, color: '#666' }}>ID: {d.id}</span>
+        <button onClick={() => onCopy(d.id)}>Copy ID</button>
+      </div>
+      <div style={{ fontSize: 12, color: '#555', marginTop: 4 }}>
+        Status: {d.status || 'unknown'} • Version: {d.version || '-'} • Last seen: {d.last_seen_at || '-'}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <select value={type} onChange={(e) => setType(e.target.value)}>
+          <option value="message_show">message_show</option>
+          <option value="lock_now">lock_now</option>
+          <option value="reboot">reboot</option>
+        </select>
+        <input
+          style={{ flex: 1, padding: 6 }}
+          value={params}
+          onChange={(e) => setParams(e.target.value)}
+          placeholder='{"key":"value"}'
+        />
+        <button onClick={() => onEnqueue(d.id, type, params)}>Send</button>
+      </div>
+    </li>
   )
 }
