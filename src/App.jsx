@@ -1,6 +1,10 @@
 import { useEffect, useState } from 'react'
+import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom'
 import { supabase } from './lib/supabase'
 import Auth from './components/Auth'
+import Dashboard from './pages/Dashboard'
+import Devices from './pages/Devices'
+import Alerts from './pages/Alerts'
 
 export default function App() {
   const [session, setSession] = useState(null)
@@ -37,15 +41,30 @@ export default function App() {
     await supabase.auth.signOut()
   }
 
-  return (
-    <div style={{ padding: 24 }}>
-      <h2>Sanlock Admin</h2>
-      <div style={{ marginBottom: 12 }}>Signed in as <strong>{email}</strong></div>
-      <button onClick={signOut}>Sign out</button>
-
-      <hr style={{ margin: '20px 0' }} />
-
-      <p>Welcome. Next, we will add Devices and Alerts pages.</p>
+  const Nav = () => (
+    <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #eee' }}>
+      <strong>Sanlock Admin</strong>
+      <Link to="/">Dashboard</Link>
+      <Link to="/devices">Devices</Link>
+      <Link to="/alerts">Alerts</Link>
+      <div style={{ marginLeft: 'auto' }}>
+        <span style={{ marginRight: 12 }}>{email}</span>
+        <button onClick={signOut}>Sign out</button>
+      </div>
     </div>
+  )
+
+  return (
+    <BrowserRouter>
+      <Nav />
+      <div style={{ padding: 16 }}>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/devices" element={<Devices />} />
+          <Route path="/alerts" element={<Alerts />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </div>
+    </BrowserRouter>
   )
 }
