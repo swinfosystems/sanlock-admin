@@ -2,9 +2,44 @@ import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useOrgId } from '../lib/useOrg'
 import { timeAgo } from '../lib/time'
+import Devices from './Devices'
 
 export default function Alerts({ isAdmin = true }) {
   const { orgId, loading: loadingOrg, error: orgError } = useOrgId()
+
+  const [active, setActive] = useState('alerts') // alerts | devices | commands | settings
+
+  if (loadingOrg) return <div>Loading org…</div>
+  if (orgError) return <div style={{ color: 'crimson' }}>{orgError}</div>
+
+  return (
+    <div>
+      <div className="toolbar" style={{ flexWrap: 'wrap' }}>
+        <h3>Admin Center</h3>
+        <div className="right" />
+        <TabButton label="Alerts" active={active==='alerts'} onClick={() => setActive('alerts')} />
+        <TabButton label="Devices" active={active==='devices'} onClick={() => setActive('devices')} />
+        <TabButton label="Commands" active={active==='commands'} onClick={() => setActive('commands')} />
+        <TabButton label="Settings" active={active==='settings'} onClick={() => setActive('settings')} />
+      </div>
+
+      {active === 'alerts' && <AlertsSection isAdmin={isAdmin} />}
+      {active === 'devices' && <Devices isAdmin={isAdmin} />}
+      {active === 'commands' && <CommandsCenter isAdmin={isAdmin} />}
+      {active === 'settings' && <SettingsSection />}
+    </div>
+  )
+}
+
+function TabButton({ label, active, onClick }) {
+  return (
+    <button className={`btn ${active ? 'btn-primary' : 'btn-ghost'}`} onClick={onClick}>{label}</button>
+  )
+}
+
+// -------- Alerts Section --------
+function AlertsSection({ isAdmin }) {
+  const { orgId } = useOrgId()
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -199,9 +234,6 @@ export default function Alerts({ isAdmin = true }) {
     URL.revokeObjectURL(url)
   }
 
-  if (loadingOrg) return <div>Loading org…</div>
-  if (orgError) return <div style={{ color: 'crimson' }}>{orgError}</div>
-
   return (
     <div>
       <div className="toolbar">
@@ -292,5 +324,174 @@ function AlertRow({ a }) {
         </tr>
       )}
     </>
+  )
+}
+
+// -------- Commands Center --------
+function CommandsCenter({ isAdmin }) {
+  const { orgId } = useOrgId()
+  const [items, setItems] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  const [status, setStatus] = useState('') // queued|running|success|failed|cancelled
+  const [device, setDevice] = useState('')
+  const [devices, setDevices] = useState([])
+
+  const fetchDevices = async () => {
+    const { data } = await supabase.from('devices').select('id, name').eq('org_id', orgId).order('name', { ascending: true })
+    setDevices(data || [])
+  }
+
+  const refresh = async () => {
+    if (!orgId) return
+    setLoading(true)
+    setError('')
+    let q = supabase
+      .from('commands')
+      .select('id, device_id, type, status, created_at, updated_at')
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: false })
+      .limit(200)
+    if (status) q = q.eq('status', status)
+    if (device) q = q.eq('device_id', device)
+    const { data, error } = await q
+    if (error) setError(error.message)
+    else setItems(data || [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    if (!orgId) return
+    let mounted = true
+    const init = async () => {
+      await Promise.all([fetchDevices(), refresh()])
+      const channel = supabase
+        .channel(`commands-org-${orgId}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'commands', filter: `org_id=eq.${orgId}` }, (p) => {
+          if (!mounted) return
+          const row = p.new
+          setItems((prev) => [{ id: row.id, device_id: row.device_id, type: row.type, status: row.status, created_at: row.created_at, updated_at: row.updated_at }, ...prev].slice(0, 200))
+        })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'commands', filter: `org_id=eq.${orgId}` }, (p) => {
+          if (!mounted) return
+          const row = p.new
+          setItems((prev) => prev.map((c) => c.id === row.id ? { ...c, status: row.status, updated_at: row.updated_at } : c))
+        })
+        .subscribe()
+      return () => supabase.removeChannel(channel)
+    }
+    init()
+    return () => { mounted = false }
+  }, [orgId])
+
+  const cancelCommand = async (id, current) => {
+    if (!isAdmin) return
+    if (current !== 'queued') return alert('Only queued commands can be cancelled')
+    const ok = confirm('Cancel this command?')
+    if (!ok) return
+    const { error } = await supabase.from('commands').update({ status: 'cancelled' }).eq('org_id', orgId).eq('id', id).eq('status', 'queued')
+    if (error) alert(error.message)
+  }
+
+  return (
+    <div>
+      <div className="toolbar">
+        <h3>Commands</h3>
+        <button className="btn" onClick={refresh} disabled={loading}>Refresh</button>
+        <div className="right" />
+        <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          <option value="">All statuses</option>
+          <option value="queued">queued</option>
+          <option value="running">running</option>
+          <option value="success">success</option>
+          <option value="failed">failed</option>
+          <option value="cancelled">cancelled</option>
+        </select>
+        <select value={device} onChange={(e) => setDevice(e.target.value)}>
+          <option value="">All devices</option>
+          {devices.map(d => <option key={d.id} value={d.id}>{d.name || d.id}</option>)}
+        </select>
+        <button className="btn" onClick={refresh}>Apply</button>
+      </div>
+      {error && <div style={{ color: 'crimson', marginTop: 8 }}>{error}</div>}
+
+      <div className="card mt-12">
+        {loading ? (
+          <div>Loading commands…</div>
+        ) : items.length === 0 ? (
+          <div className="muted">No commands found.</div>
+        ) : (
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Created</th>
+                <th>Device</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Updated</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((c) => (
+                <tr key={c.id}>
+                  <td style={{ fontSize: 12 }}>{timeAgo(c.created_at)}</td>
+                  <td className="code">{c.device_id}</td>
+                  <td><strong>{c.type}</strong></td>
+                  <td>{c.status}</td>
+                  <td style={{ fontSize: 12 }}>{timeAgo(c.updated_at || c.created_at)}</td>
+                  <td>
+                    {isAdmin && c.status === 'queued' && (
+                      <button className="btn btn-danger" onClick={() => cancelCommand(c.id, c.status)}>Cancel</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// -------- Settings --------
+function SettingsSection() {
+  const { orgId } = useOrgId()
+  const key = `commandPresets:${orgId}`
+  const [text, setText] = useState('')
+  const [msg, setMsg] = useState('')
+
+  useEffect(() => {
+    const saved = localStorage.getItem(key)
+    if (saved) setText(saved)
+    else setText(JSON.stringify({ message_show: { text: 'Hello' }, lock_now: {}, reboot: {} }, null, 2))
+  }, [key])
+
+  const save = () => {
+    try {
+      const obj = JSON.parse(text)
+      if (typeof obj !== 'object' || Array.isArray(obj)) throw new Error('Must be a JSON object map of type -> params')
+      localStorage.setItem(key, JSON.stringify(obj, null, 2))
+      setMsg('Saved')
+      setTimeout(() => setMsg(''), 1500)
+    } catch (e) {
+      setMsg(e.message)
+    }
+  }
+
+  return (
+    <div>
+      <div className="card">
+        <strong>Command presets</strong>
+        <div className="muted" style={{ marginTop: 6 }}>Manage per-org presets used in Devices page Send UI.</div>
+        <textarea style={{ width: '100%', minHeight: 220, marginTop: 12 }} value={text} onChange={(e) => setText(e.target.value)} />
+        <div className="row mt-12">
+          <button className="btn btn-primary" onClick={save}>Save</button>
+          {msg && <span className="muted" style={{ marginLeft: 8 }}>{msg}</span>}
+        </div>
+      </div>
+    </div>
   )
 }

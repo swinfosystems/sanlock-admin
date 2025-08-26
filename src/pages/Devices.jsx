@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useOrgId } from '../lib/useOrg'
 
@@ -17,6 +17,25 @@ export default function Devices({ isAdmin = true }) {
   const [sortDir, setSortDir] = useState('asc') // asc|desc
   const [page, setPage] = useState(1)
   const pageSize = 10
+
+  // command presets (fallback defaults)
+  const defaultPresets = { message_show: { text: 'Hello' }, lock_now: {}, reboot: {} }
+  const [presets, setPresets] = useState(defaultPresets)
+  useEffect(() => {
+    if (!orgId) return
+    try {
+      const raw = localStorage.getItem(`commandPresets:${orgId}`)
+      if (raw) {
+        const obj = JSON.parse(raw)
+        if (obj && typeof obj === 'object' && !Array.isArray(obj)) setPresets(obj)
+        else setPresets(defaultPresets)
+      } else {
+        setPresets(defaultPresets)
+      }
+    } catch {
+      setPresets(defaultPresets)
+    }
+  }, [orgId])
 
   const fetchDevices = async () => {
     if (!orgId) return
@@ -90,12 +109,6 @@ export default function Devices({ isAdmin = true }) {
     } catch (e) {
       console.error(e)
     }
-  }
-
-  const presets = {
-    message_show: { text: 'Hello' },
-    lock_now: {},
-    reboot: {},
   }
 
   const enqueueCommand = async (deviceId, type, paramsText, setJsonError) => {
@@ -215,12 +228,12 @@ export default function Devices({ isAdmin = true }) {
                 <th>Status</th>
                 <th>Version</th>
                 <th>Last seen</th>
-                <th style={{ width: 340 }}>Actions</th>
+                <th style={{ width: 420 }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {pageItems.map((d) => (
-                <DeviceRow key={d.id} d={d} orgId={orgId} onCopy={copy} onEnqueue={enqueueCommand} renderStatus={statusBadge} onRename={renameDevice} onDelete={deleteDevice} isAdmin={isAdmin} />
+                <DeviceRow key={d.id} d={d} orgId={orgId} onCopy={copy} onEnqueue={enqueueCommand} renderStatus={statusBadge} onRename={renameDevice} onDelete={deleteDevice} isAdmin={isAdmin} presets={presets} />
               ))}
             </tbody>
           </table>
@@ -239,11 +252,12 @@ export default function Devices({ isAdmin = true }) {
   )
 }
 
-function DeviceRow({ d, orgId, onCopy, onEnqueue, renderStatus, onRename, onDelete, isAdmin }) {
+function DeviceRow({ d, orgId, onCopy, onEnqueue, renderStatus, onRename, onDelete, isAdmin, presets }) {
   const [type, setType] = useState('message_show')
   const [params, setParams] = useState(JSON.stringify({ text: 'Hello' }))
   const [jsonError, setJsonError] = useState('')
   const [showHistory, setShowHistory] = useState(false)
+  const [showCam, setShowCam] = useState(false)
   const [editingName, setEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState(d.name || '')
 
@@ -265,6 +279,8 @@ function DeviceRow({ d, orgId, onCopy, onEnqueue, renderStatus, onRename, onDele
     if (!nameDraft.trim()) { setNameDraft(d.name || ''); return }
     await onRename(d.id, nameDraft.trim())
   }
+
+  const presetKeys = Object.keys(presets || {})
 
   return (
     <>
@@ -295,11 +311,11 @@ function DeviceRow({ d, orgId, onCopy, onEnqueue, renderStatus, onRename, onDele
               <option value="lock_now">lock_now</option>
               <option value="reboot">reboot</option>
             </select>
-            <select onChange={(e) => setParams(JSON.stringify(presets[e.target.value]))} defaultValue="">
+            <select onChange={(e) => setParams(JSON.stringify((presets || {})[e.target.value] || {}))} defaultValue="">
               <option value="" disabled>Preset</option>
-              <option value="message_show">message_show</option>
-              <option value="lock_now">lock_now</option>
-              <option value="reboot">reboot</option>
+              {presetKeys.map((k) => (
+                <option key={k} value={k}>{k}</option>
+              ))}
             </select>
             <input
               style={{ flex: 1, minWidth: 160 }}
@@ -309,6 +325,9 @@ function DeviceRow({ d, orgId, onCopy, onEnqueue, renderStatus, onRename, onDele
             />
             <button className="btn btn-primary" disabled={!!jsonError} onClick={() => onEnqueue(d.id, type, params, setJsonError)}>Send</button>
             <button className="btn" onClick={() => setShowHistory((v) => !v)}>{showHistory ? 'Hide' : 'History'}</button>
+            {isAdmin && (
+              <button className="btn" onClick={() => setShowCam((v) => !v)}>{showCam ? 'Stop camera' : 'Request camera'}</button>
+            )}
             {isAdmin && (<button className="btn btn-danger" onClick={() => onDelete(d.id)}>Delete</button>)}
           </div>
           {jsonError && <div style={{ color: 'crimson', fontSize: 12, marginTop: 4 }}>{jsonError}</div>}
@@ -319,6 +338,15 @@ function DeviceRow({ d, orgId, onCopy, onEnqueue, renderStatus, onRename, onDele
           <td colSpan={6}>
             <div className="card">
               <DeviceCommands orgId={orgId} deviceId={d.id} />
+            </div>
+          </td>
+        </tr>
+      )}
+      {showCam && (
+        <tr>
+          <td colSpan={6}>
+            <div className="card">
+              <CameraSession orgId={orgId} deviceId={d.id} onEnd={() => setShowCam(false)} />
             </div>
           </td>
         </tr>
@@ -407,6 +435,123 @@ function DeviceCommands({ orgId, deviceId }) {
           </tbody>
         </table>
       )}
+    </div>
+  )
+}
+
+function CameraSession({ orgId, deviceId, onEnd }) {
+  const videoRef = useRef(null)
+  const pcRef = useRef(null)
+  const chanRef = useRef(null)
+  const sessionIdRef = useRef(crypto.randomUUID())
+  const [status, setStatus] = useState('init') // init|connecting|connected|ended|error
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    let mounted = true
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
+    pcRef.current = pc
+
+    pc.ontrack = (ev) => {
+      if (!mounted) return
+      const [stream] = ev.streams
+      if (videoRef.current && stream) {
+        videoRef.current.srcObject = stream
+      }
+    }
+
+    pc.onicecandidate = async (ev) => {
+      if (!ev.candidate) return
+      try {
+        await supabase.from('commands').insert([{ org_id: orgId, device_id: deviceId, type: 'webrtc_ice', params_json: { session_id: sessionIdRef.current, from: 'admin', candidate: ev.candidate } }])
+      } catch (e) {
+        console.error('insert ice failed', e)
+      }
+    }
+
+    const start = async () => {
+      setStatus('connecting')
+      try {
+        // We expect remote to send us media; we do not add local tracks.
+        const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
+        await pc.setLocalDescription(offer)
+        // send offer via commands
+        const { error } = await supabase.from('commands').insert([{ org_id: orgId, device_id: deviceId, type: 'webrtc_offer', params_json: { session_id: sessionIdRef.current, sdp: offer.sdp } }])
+        if (error) throw error
+      } catch (e) {
+        setErr(e.message)
+        setStatus('error')
+      }
+    }
+
+    start()
+
+    // subscribe for answer/ice from device
+    const channel = supabase
+      .channel(`webrtc-${orgId}-${deviceId}-${sessionIdRef.current}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'commands', filter: `org_id=eq.${orgId} and device_id=eq.${deviceId}` }, async (p) => {
+        const row = p.new
+        const params = row.params_json || {}
+        if (params.session_id !== sessionIdRef.current) return
+        if (row.type === 'webrtc_answer') {
+          try {
+            await pc.setRemoteDescription({ type: 'answer', sdp: params.sdp })
+            setStatus('connected')
+          } catch (e) {
+            console.error(e)
+            setErr(e.message)
+            setStatus('error')
+          }
+        } else if (row.type === 'webrtc_ice' && params.from === 'device' && params.candidate) {
+          try {
+            await pc.addIceCandidate(params.candidate)
+          } catch (e) {
+            console.error('addIceCandidate failed', e)
+          }
+        }
+      })
+      .subscribe()
+    chanRef.current = channel
+
+    return () => {
+      mounted = false
+      if (chanRef.current) supabase.removeChannel(chanRef.current)
+      if (pcRef.current) {
+        pcRef.current.getSenders().forEach(s => s.track && s.track.stop())
+        pcRef.current.close()
+      }
+      setStatus('ended')
+    }
+  }, [orgId, deviceId])
+
+  const stop = async () => {
+    if (chanRef.current) supabase.removeChannel(chanRef.current)
+    if (pcRef.current) {
+      pcRef.current.getSenders().forEach(s => s.track && s.track.stop())
+      pcRef.current.close()
+    }
+    try {
+      await supabase.from('commands').insert([{ org_id: orgId, device_id: deviceId, type: 'webrtc_end', params_json: { session_id: sessionIdRef.current } }])
+    } catch {}
+    setStatus('ended')
+    onEnd?.()
+  }
+
+  return (
+    <div>
+      <div className="row">
+        <strong>Camera session</strong>
+        <div className="right" />
+        <span className="muted">{status}</span>
+        <button className="btn" onClick={stop}>End</button>
+      </div>
+      {err && <div style={{ color: 'crimson', marginTop: 6 }}>{err}</div>}
+      <div style={{ marginTop: 8 }}>
+        <video ref={videoRef} autoPlay playsInline style={{ width: '100%', maxHeight: 360, background: '#000' }} />
+      </div>
+      <div className="muted" style={{ marginTop: 6, fontSize: 12 }}>
+        Requires the device agent to handle commands: webrtc_offer (create answer, send as webrtc_answer) and webrtc_ice bi-directional.
+      </div>
     </div>
   )
 }
