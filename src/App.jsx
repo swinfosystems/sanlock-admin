@@ -9,6 +9,12 @@ import Alerts from './pages/Alerts'
 export default function App() {
   const [session, setSession] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('theme', theme)
+  }, [theme])
 
   useEffect(() => {
     let mounted = true
@@ -36,6 +42,8 @@ export default function App() {
   }
 
   const email = session.user?.email
+  const role = session.user?.app_metadata?.role || session.user?.user_metadata?.role || 'admin'
+  const isAdmin = role === 'admin'
 
   const signOut = async () => {
     await supabase.auth.signOut()
@@ -48,8 +56,9 @@ export default function App() {
       <Link to="/devices">Devices</Link>
       <Link to="/alerts">Alerts</Link>
       <div className="spacer" />
-      <span className="muted" style={{ marginRight: 12 }}>{email}</span>
-      <button className="btn" onClick={signOut}>Sign out</button>
+      <span className="muted" style={{ marginRight: 12 }}>{email} · {role}</span>
+      <button className="btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? 'Light' : 'Dark'}</button>
+      <button className="btn" onClick={signOut} style={{ marginLeft: 8 }}>Sign out</button>
     </div>
   )
 
@@ -59,8 +68,8 @@ export default function App() {
       <div className="page">
         <Routes>
           <Route path="/" element={<Dashboard />} />
-          <Route path="/devices" element={<Devices />} />
-          <Route path="/alerts" element={<Alerts />} />
+          <Route path="/devices" element={<Devices isAdmin={isAdmin} />} />
+          <Route path="/alerts" element={<Alerts isAdmin={isAdmin} />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </div>

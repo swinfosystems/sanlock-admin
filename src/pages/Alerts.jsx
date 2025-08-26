@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useOrgId } from '../lib/useOrg'
 import { timeAgo } from '../lib/time'
 
-export default function Alerts() {
+export default function Alerts({ isAdmin = true }) {
   const { orgId, loading: loadingOrg, error: orgError } = useOrgId()
   const [alerts, setAlerts] = useState([])
   const [loading, setLoading] = useState(true)
@@ -16,6 +16,26 @@ export default function Alerts() {
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [devices, setDevices] = useState([])
+
+  // load saved filters
+  useEffect(() => {
+    const saved = localStorage.getItem('alertsFilters')
+    if (saved) {
+      try {
+        const f = JSON.parse(saved)
+        if (f.typeFilter) setTypeFilter(f.typeFilter)
+        if (f.deviceFilter) setDeviceFilter(f.deviceFilter)
+        if (f.fromDate) setFromDate(f.fromDate)
+        if (f.toDate) setToDate(f.toDate)
+      } catch {}
+    }
+  }, [])
+
+  // persist filters
+  useEffect(() => {
+    const payload = { typeFilter, deviceFilter, fromDate, toDate }
+    localStorage.setItem('alertsFilters', JSON.stringify(payload))
+  }, [typeFilter, deviceFilter, fromDate, toDate])
 
   const loadDevices = async () => {
     if (!orgId) return
@@ -33,7 +53,7 @@ export default function Alerts() {
     setError('')
     let query = supabase
       .from('alerts')
-      .select('id, device_id, type, meta_json, created_at')
+      .select('id, device_id, type, meta_json, created_at, org_id')
       .eq('org_id', orgId)
       .order('created_at', { ascending: false })
       .limit(200)
@@ -90,7 +110,8 @@ export default function Alerts() {
             device_id: row.device_id,
             type: row.type,
             meta_json: row.meta_json,
-            created_at: row.created_at
+            created_at: row.created_at,
+            org_id: row.org_id,
           }, ...prev].slice(0, 200))
         }
       )
@@ -118,7 +139,7 @@ export default function Alerts() {
 
       const { error } = await supabase
         .from('alerts')
-        .insert([{ org_id: orgId, device_id: dev.id, type: 'test', meta_json: { note: 'Hello from Admin UI' } }])
+        .insert([{ org_id: orgId, device_id: dev.id, type: 'test', meta_json: { note: 'Hello from Admin UI', severity: 'info' } }])
       if (error) throw error
       await fetchAlerts()
     } catch (e) {
@@ -129,7 +150,7 @@ export default function Alerts() {
   }
 
   const clearAlerts = async () => {
-    if (!orgId) return
+    if (!orgId || !isAdmin) return
     const ok = confirm('Clear alerts with current filters? This cannot be undone.')
     if (!ok) return
     setBusy(true)
@@ -153,6 +174,31 @@ export default function Alerts() {
     }
   }
 
+  const exportCSV = () => {
+    const rows = alerts.map(a => ({
+      created_at: a.created_at,
+      device_id: a.device_id,
+      type: a.type,
+      severity: a.meta_json?.severity || '',
+      meta: JSON.stringify(a.meta_json || {}),
+    }))
+    const headers = Object.keys(rows[0] || { created_at: '', device_id: '', type: '', severity: '', meta: '' })
+    const escape = (v) => {
+      const s = String(v ?? '')
+      if (s.includes(',') || s.includes('"') || s.includes('\n')) return '"' + s.replace(/"/g, '""') + '"'
+      return s
+    }
+    const csv = [headers.join(','), ...rows.map(r => headers.map(h => escape(r[h])).join(','))].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    const date = new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')
+    a.download = `alerts-${date}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   if (loadingOrg) return <div>Loading org…</div>
   if (orgError) return <div style={{ color: 'crimson' }}>{orgError}</div>
 
@@ -163,7 +209,10 @@ export default function Alerts() {
         <button className="btn" onClick={fetchAlerts} disabled={loading}>Refresh</button>
         <button className="btn btn-primary" onClick={createTestAlert} disabled={busy}>Create test alert</button>
         <div className="right" />
-        <button className="btn btn-danger" onClick={clearAlerts} disabled={busy}>Clear</button>
+        <button className="btn" onClick={exportCSV} disabled={alerts.length === 0}>Export CSV</button>
+        {isAdmin && (
+          <button className="btn btn-danger" onClick={clearAlerts} disabled={busy}>Clear</button>
+        )}
       </div>
       {error && <div style={{ color: 'crimson', marginTop: 8 }}>{error}</div>}
 
@@ -192,6 +241,7 @@ export default function Alerts() {
                 <th>Time</th>
                 <th>Device</th>
                 <th>Type</th>
+                <th>Severity</th>
                 <th>Meta</th>
               </tr>
             </thead>
@@ -207,6 +257,16 @@ export default function Alerts() {
   )
 }
 
+function severityBadge(a) {
+  const sev = (a.meta_json?.severity || '').toLowerCase()
+  const t = (a.type || '').toLowerCase()
+  const level = sev || (t.includes('error') || t.includes('offline') || t.includes('fail') ? 'error' : t.includes('warn') ? 'warning' : t.includes('info') || t === 'test' ? 'info' : '')
+  if (level === 'error' || level === 'critical') return <span className="badge badge-danger">{sev || 'error'}</span>
+  if (level === 'warning') return <span className="badge badge-warning">warning</span>
+  if (level === 'info' || level === 'ok') return <span className="badge badge-success">{level}</span>
+  return <span className="badge badge-neutral">-</span>
+}
+
 function AlertRow({ a }) {
   const [open, setOpen] = useState(false)
   return (
@@ -215,6 +275,7 @@ function AlertRow({ a }) {
         <td style={{ fontSize: 12 }}>{timeAgo(a.created_at)}</td>
         <td className="code">{a.device_id}</td>
         <td><strong>{a.type}</strong></td>
+        <td>{severityBadge(a)}</td>
         <td>
           {a.meta_json ? (
             <button className="btn btn-ghost" onClick={() => setOpen((v) => !v)}>{open ? 'Hide' : 'View'}</button>
@@ -225,7 +286,7 @@ function AlertRow({ a }) {
       </tr>
       {open && a.meta_json && (
         <tr>
-          <td colSpan={4}>
+          <td colSpan={5}>
             <pre className="code" style={{ background: '#0c1427', padding: 8, overflowX: 'auto' }}>{JSON.stringify(a.meta_json, null, 2)}</pre>
           </td>
         </tr>
