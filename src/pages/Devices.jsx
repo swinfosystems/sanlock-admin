@@ -310,6 +310,7 @@ function DeviceRow({ d, orgId, onCopy, onEnqueue, renderStatus, onRename, onDele
               <option value="message_show">message_show</option>
               <option value="lock_now">lock_now</option>
               <option value="reboot">reboot</option>
+              <option value="camera_capture">camera_capture</option>
             </select>
             <select onChange={(e) => setParams(JSON.stringify((presets || {})[e.target.value] || {}))} defaultValue="">
               <option value="" disabled>Preset</option>
@@ -449,7 +450,18 @@ function CameraSession({ orgId, deviceId, onEnd }) {
 
   useEffect(() => {
     let mounted = true
-    const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] })
+    // Build ICE config from env. Prefer TURN relay-only to avoid inbound host candidates (Windows firewall prompts).
+    const turnUrls = (import.meta.env.VITE_TURN_URLS || '').split(',').map(s => s.trim()).filter(Boolean)
+    const turnUsername = import.meta.env.VITE_TURN_USERNAME || ''
+    const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL || ''
+    const icePolicy = import.meta.env.VITE_ICE_POLICY || 'relay' // relay|all
+    let iceServers = [{ urls: 'stun:stun.l.google.com:19302' }]
+    let iceTransportPolicy = 'all'
+    if (turnUrls.length) {
+      iceServers = [{ urls: turnUrls, username: turnUsername || undefined, credential: turnCredential || undefined }]
+      iceTransportPolicy = icePolicy
+    }
+    const pc = new RTCPeerConnection({ iceServers, iceTransportPolicy })
     pcRef.current = pc
 
     pc.ontrack = (ev) => {
